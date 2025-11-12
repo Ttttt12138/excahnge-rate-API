@@ -100,6 +100,23 @@ def compute_corr(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     df_num = df[use_cols].apply(pd.to_numeric, errors="coerce")
     return df_num.corr()
 
+def compute_kpis(df: pd.DataFrame, keys: list[str]) -> dict:
+    items: dict[str, dict] = {}
+    if df is None or df.empty:
+        return {"items": items}
+    for k in keys:
+        if k not in df.columns:
+            continue
+        s = df[k].dropna()
+        if s.empty:
+            continue
+        val = float(s.iloc[-1])
+        mom_pct = None
+        if len(s) >= 2 and s.iloc[-2] != 0:
+            mom_pct = (val - float(s.iloc[-2])) / abs(float(s.iloc[-2]))
+        items[k] = {"value": val, "mom_pct": mom_pct}
+    return {"items": items}
+
 def run_gemini(query: str, df_context: pd.DataFrame, api_key: str, lang: str = "zh") -> str:
     if not api_key:
         return "请在侧边栏输入 Gemini API Key。" if lang == "zh" else "Please enter Gemini API Key in the sidebar."
@@ -255,12 +272,15 @@ def main():
         corr_df = compute_corr(df_f, corr_cols)
     tab1, tab2 = st.tabs([TEXT[lang]["tab_dashboard"], TEXT[lang]["tab_ai"]])
     with tab1:
+        kpi_keys = list(KPI_LABELS[lang].keys())
+        computed = compute_kpis(df_f, kpi_keys)
         items = {}
-        for k in KPI_LABELS[lang].keys():
+        for k in kpi_keys:
             src = kpis.get("items", {}).get(k, {}) if kpis else {}
+            comp = computed.get("items", {}).get(k, {})
             items[k] = {
-                "value": src.get("value"),
-                "mom_pct": src.get("mom_pct"),
+                "value": src.get("value", comp.get("value")),
+                "mom_pct": src.get("mom_pct", comp.get("mom_pct")),
                 "qoq_pct": src.get("qoq_pct"),
             }
         render_kpis({"items": items})
