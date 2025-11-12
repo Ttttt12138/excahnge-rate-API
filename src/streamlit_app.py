@@ -160,6 +160,8 @@ def main():
             "enter_question": "请输入你的问题...",
             "gen_analysis": "生成分析",
             "history": "历史记录（最多保留三条）",
+            "clear_history": "清空历史",
+            "delete_last": "删除最近一条",
             "question_prefix": "问题：",
             "chart_fx_trend": "USD/CNY 汇率长期趋势",
             "chart_rate_comp": "美中利率对比",
@@ -192,6 +194,8 @@ def main():
             "enter_question": "Enter your question...",
             "gen_analysis": "Generate Analysis",
             "history": "History (max 3)",
+            "clear_history": "Clear History",
+            "delete_last": "Delete Latest",
             "question_prefix": "Question:",
             "chart_fx_trend": "USD/CNY Long-term Trend",
             "chart_rate_comp": "US-CN Interest Rate Comparison",
@@ -350,6 +354,24 @@ def main():
                 _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
         st.divider()
         st.caption(TEXT[lang]["history"])
+        c_del_all, c_del_last = st.columns([1,1])
+        if c_del_all.button(TEXT[lang]["clear_history"]):
+            st.session_state["ai_history"] = []
+            save_path = os.path.join("output", "eda", "ai_history.json")
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            with open(save_path, "w", encoding="utf-8") as f:
+                import json as _json
+                _json.dump([], f, ensure_ascii=False, indent=2)
+            st.rerun()
+        if c_del_last.button(TEXT[lang]["delete_last"]):
+            if st.session_state.get("ai_history"):
+                st.session_state["ai_history"].pop()
+                save_path = os.path.join("output", "eda", "ai_history.json")
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                with open(save_path, "w", encoding="utf-8") as f:
+                    import json as _json
+                    _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
+                st.rerun()
         for idx, item in enumerate(reversed(st.session_state["ai_history"])):
             label = f"{item.get('time','')} | {item.get('summary','')}"
             with st.expander(label):
