@@ -1,0 +1,6 @@
+pandas>=2.1.0
+fredapi>=0.5.2
+tushare>=1.2.89
+streamlit>=1.38.0
+plotly>=5.24.0
+google-generativeai>=0.7.2
