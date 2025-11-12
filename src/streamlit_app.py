@@ -71,7 +71,13 @@ def render_line(df: pd.DataFrame, col: str, title: str):
     st.plotly_chart(fig, use_container_width=True)
 
 def render_scatter(df: pd.DataFrame, x_col: str, y_col: str, title: str):
-    fig = px.scatter(df.reset_index(), x=x_col, y=y_col, trendline="ols", title=title)
+    trend = None
+    try:
+        import statsmodels.api as _sm
+        trend = "ols"
+    except ModuleNotFoundError:
+        trend = None
+    fig = px.scatter(df.reset_index(), x=x_col, y=y_col, trendline=trend, title=title)
     st.plotly_chart(fig, use_container_width=True)
 
 def render_hist(df: pd.DataFrame, col: str, title: str):
