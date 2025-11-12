@@ -15,7 +15,15 @@ def load_csv(pth: str) -> pd.DataFrame:
     @st.cache_data(show_spinner=False)
     def _load(path: str):
         try:
-            df = pd.read_csv(path)
+            if path.startswith("http://") or path.startswith("https://"):
+                import urllib.request
+                import io
+                req = urllib.request.Request(path, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req) as resp:
+                    data = resp.read().decode("utf-8")
+                df = pd.read_csv(io.StringIO(data))
+            else:
+                df = pd.read_csv(path)
         except Exception as e:
             st.error(f"数据加载失败: {e}")
             return pd.DataFrame()
@@ -212,7 +220,8 @@ def main():
     date_min = df.index.min().date() if not df.empty else dt.date(2000, 1, 1)
     date_max = df.index.max().date() if not df.empty else dt.date.today()
     date_range = st.sidebar.date_input(TEXT[lang]["date_range"], (date_min, date_max))
-    api_key = st.sidebar.text_input(TEXT[lang]["api_key"], type="password")
+    api_key_default = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+    api_key = st.sidebar.text_input(TEXT[lang]["api_key"], type="password", value=api_key_default)
     start_date, end_date = date_range if isinstance(date_range, tuple) else (date_min, date_max)
     df_f = filter_by_date(df, start_date, end_date)
     tab1, tab2 = st.tabs([TEXT[lang]["tab_dashboard"], TEXT[lang]["tab_ai"]])
