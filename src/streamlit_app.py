@@ -231,7 +231,15 @@ def main():
     corr_path = os.path.join("output", "eda", "correlation.csv")
     if os.path.exists(corr_path):
         corr_df = pd.read_csv(corr_path, index_col=0)
-    else:
+    st.sidebar.title(TEXT[lang]["filters"])
+    date_min = df.index.min().date() if not df.empty else dt.date(2000, 1, 1)
+    date_max = df.index.max().date() if not df.empty else dt.date.today()
+    date_range = st.sidebar.date_input(TEXT[lang]["date_range"], (date_min, date_max))
+    api_key_default = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+    api_key = st.sidebar.text_input(TEXT[lang]["api_key"], type="password", value=api_key_default)
+    start_date, end_date = date_range if isinstance(date_range, tuple) else (date_min, date_max)
+    df_f = filter_by_date(df, start_date, end_date)
+    if corr_df is None or corr_df.empty:
         corr_cols = [
             "USD_CNY_Rate",
             "US_Interest_Rate",
@@ -245,14 +253,6 @@ def main():
             "Interest_Spread",
         ]
         corr_df = compute_corr(df_f, corr_cols)
-    st.sidebar.title(TEXT[lang]["filters"])
-    date_min = df.index.min().date() if not df.empty else dt.date(2000, 1, 1)
-    date_max = df.index.max().date() if not df.empty else dt.date.today()
-    date_range = st.sidebar.date_input(TEXT[lang]["date_range"], (date_min, date_max))
-    api_key_default = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
-    api_key = st.sidebar.text_input(TEXT[lang]["api_key"], type="password", value=api_key_default)
-    start_date, end_date = date_range if isinstance(date_range, tuple) else (date_min, date_max)
-    df_f = filter_by_date(df, start_date, end_date)
     tab1, tab2 = st.tabs([TEXT[lang]["tab_dashboard"], TEXT[lang]["tab_ai"]])
     with tab1:
         items = {}
