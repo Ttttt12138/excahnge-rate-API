@@ -14,7 +14,11 @@ st.set_page_config(layout="wide", page_title="汇率 (USD/CNY) 深度分析仪�
 def load_csv(pth: str) -> pd.DataFrame:
     @st.cache_data(show_spinner=False)
     def _load(path: str):
-        df = pd.read_csv(path)
+        try:
+            df = pd.read_csv(path)
+        except Exception as e:
+            st.error(f"数据加载失败: {e}")
+            return pd.DataFrame()
         df["Date"] = pd.to_datetime(df["Date"]) 
         df = df.sort_values("Date").set_index("Date")
         return df
@@ -192,7 +196,12 @@ def main():
     default_url = st.secrets.get("DATA_URL", os.environ.get("DATA_URL", ""))
     data_url = st.sidebar.text_input("数据源 URL (Gist Raw)", value=default_url)
     src_path = data_url if data_url else os.path.join("output", "master_data.csv")
+    if not (data_url.startswith("http://") or data_url.startswith("https://")) and not os.path.exists(src_path):
+        st.error("未找到数据文件。请在侧边栏输入 Gist Raw URL 或在 Secrets 设置 DATA_URL。")
+        st.stop()
     df = load_csv(src_path)
+    if df.empty:
+        st.stop()
     df["Interest_Spread"] = df["US_Interest_Rate"] - df["CN_LPR"]
     kpis = load_json(os.path.join("output", "eda", "kpis.json"))
     corr_df = None
