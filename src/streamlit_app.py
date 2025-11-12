@@ -91,6 +91,15 @@ def render_heatmap(corr_df: pd.DataFrame, title: str, info_text: str):
     fig = px.imshow(corr_df.values, x=corr_df.columns, y=corr_df.columns, color_continuous_scale="RdBu", zmin=-1, zmax=1, title=title)
     st.plotly_chart(fig, use_container_width=True)
 
+def compute_corr(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    use_cols = [c for c in cols if c in df.columns]
+    if not use_cols:
+        return pd.DataFrame()
+    df_num = df[use_cols].apply(pd.to_numeric, errors="coerce")
+    return df_num.corr()
+
 def run_gemini(query: str, df_context: pd.DataFrame, api_key: str, lang: str = "zh") -> str:
     if not api_key:
         return "请在侧边栏输入 Gemini API Key。" if lang == "zh" else "Please enter Gemini API Key in the sidebar."
@@ -222,6 +231,20 @@ def main():
     corr_path = os.path.join("output", "eda", "correlation.csv")
     if os.path.exists(corr_path):
         corr_df = pd.read_csv(corr_path, index_col=0)
+    else:
+        corr_cols = [
+            "USD_CNY_Rate",
+            "US_Interest_Rate",
+            "CN_LPR",
+            "US_CPI",
+            "CN_CPI",
+            "Gold_Price",
+            "SP500_Close",
+            "CN_M2",
+            "CN_Stock_Price",
+            "Interest_Spread",
+        ]
+        corr_df = compute_corr(df_f, corr_cols)
     st.sidebar.title(TEXT[lang]["filters"])
     date_min = df.index.min().date() if not df.empty else dt.date(2000, 1, 1)
     date_max = df.index.max().date() if not df.empty else dt.date.today()
