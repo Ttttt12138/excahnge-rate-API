@@ -219,6 +219,14 @@ def main():
             "chart_m2": "中国 M2 供应量趋势",
             "chart_spread_fx": "利差与汇率散点图",
             "chart_fx_hist": "汇率分布直方图",
+            "btn_fx_trend": "🤖 分析 [汇率趋势]",
+            "btn_gold_trend": "🤖 分析 [黄金趋势]",
+            "btn_rate_comp": "🤖 分析 [利率对比]",
+            "btn_cpi_comp": "🤖 分析 [通胀对比]",
+            "btn_spread_fx": "🤖 分析 [利差与汇率]",
+            "btn_corr_matrix": "🤖 分析 [相关性矩阵]",
+            "btn_fx_hist": "🤖 分析 [汇率分布]",
+            "ai_need_key": "未检测到 Key，请在侧边栏输入或设置 .env/Secrets",
         },
         "en": {
             "title": "💹 USD/CNY Deep Analysis Dashboard",
@@ -256,6 +264,14 @@ def main():
             "chart_m2": "China M2 Supply Trend",
             "chart_spread_fx": "Spread vs FX Scatter",
             "chart_fx_hist": "FX Distribution Histogram",
+            "btn_fx_trend": "🤖 Analyze [FX Trend]",
+            "btn_gold_trend": "🤖 Analyze [Gold Trend]",
+            "btn_rate_comp": "🤖 Analyze [Rate Comparison]",
+            "btn_cpi_comp": "🤖 Analyze [CPI Comparison]",
+            "btn_spread_fx": "🤖 Analyze [Spread vs FX]",
+            "btn_corr_matrix": "🤖 Analyze [Correlation Matrix]",
+            "btn_fx_hist": "🤖 Analyze [FX Distribution]",
+            "ai_need_key": "API Key missing. Enter in sidebar or set .env/Secrets",
         },
     }
     KPI_LABELS = {
@@ -370,24 +386,231 @@ def main():
         render_kpis({"items": items})
         st.subheader(TEXT[lang]["core_trends"])
         render_line(df_f, "USD_CNY_Rate", TEXT[lang]["chart_fx_trend"])
+        if st.button(TEXT[lang]["btn_fx_trend"]):
+            s = df_f["USD_CNY_Rate"].dropna()
+            if s.empty:
+                st.info(TEXT[lang]["stats_unavail"])
+            elif not api_key:
+                st.info(TEXT[lang]["ai_need_key"])
+            else:
+                desc = s.describe().to_string()
+                head = df_f[["USD_CNY_Rate"]].head().to_string()
+                if lang == "zh":
+                    prompt = f"你是一个金融分析师。基于以下统计数据与数据摘要，分析 USD/CNY 汇率在所选时间范围内的趋势、波动性和关键转折点。\n\n统计:\n{desc}\n\n数据摘要:\n{head}"
+                else:
+                    prompt = f"You are a financial analyst. Analyze USD/CNY trend, volatility and turning points based on stats and snippet.\n\nStats:\n{desc}\n\nSnippet:\n{head}"
+                resp = run_gemini(prompt, df_f, api_key, lang)
+                with st.expander("AI"):
+                    st.write(resp)
+                if "ai_history" not in st.session_state:
+                    st.session_state["ai_history"] = []
+                ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                summ = resp.strip()
+                if len(summ) > 160:
+                    summ = summ[:160] + "..."
+                entry = {"time": ts, "question": "FX Trend", "summary": summ, "detail": resp}
+                st.session_state["ai_history"].append(entry)
+                st.session_state["ai_history"] = st.session_state["ai_history"][-7:]
+                save_path = os.path.join("output", "eda", "ai_history.json")
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                with open(save_path, "w", encoding="utf-8") as f:
+                    import json as _json
+                    _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
         st.subheader(TEXT[lang]["macro_contrast"])
         render_dual_axis(df_f, "US_Interest_Rate", "CN_LPR", TEXT[lang]["chart_rate_comp"])
+        if st.button(TEXT[lang]["btn_rate_comp"]):
+            if df_f.empty:
+                st.info(TEXT[lang]["stats_unavail"])
+            elif not api_key:
+                st.info(TEXT[lang]["ai_need_key"])
+            else:
+                c = df_f["US_Interest_Rate"].corr(df_f["CN_LPR"]) if "US_Interest_Rate" in df_f.columns and "CN_LPR" in df_f.columns else None
+                sp = None
+                if "US_Interest_Rate" in df_f.columns and "CN_LPR" in df_f.columns and not df_f[["US_Interest_Rate","CN_LPR"]].dropna().empty:
+                    sp = (df_f["US_Interest_Rate"].iloc[-1] - df_f["CN_LPR"].iloc[-1]) * 100
+                if lang == "zh":
+                    prompt = f"你是一个经济学家。美中利率的相关系数为 {c if c is not None else 'N/A'}，最新利差为 {sp if sp is not None else 'N/A'} 基点。请分析两国利率在所选时间内的走势是趋同还是分化，并解释这种相关性。"
+                else:
+                    prompt = f"You are an economist. US vs CN rates correlation is {c if c is not None else 'N/A'}, latest spread {sp if sp is not None else 'N/A'} bps. Analyze convergence/divergence and explain correlation."
+                resp = run_gemini(prompt, df_f, api_key, lang)
+                with st.expander("AI"):
+                    st.write(resp)
+                if "ai_history" not in st.session_state:
+                    st.session_state["ai_history"] = []
+                ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                summ = resp.strip()
+                if len(summ) > 160:
+                    summ = summ[:160] + "..."
+                entry = {"time": ts, "question": "Rate Comparison", "summary": summ, "detail": resp}
+                st.session_state["ai_history"].append(entry)
+                st.session_state["ai_history"] = st.session_state["ai_history"][-7:]
+                save_path = os.path.join("output", "eda", "ai_history.json")
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                with open(save_path, "w", encoding="utf-8") as f:
+                    import json as _json
+                    _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
         render_dual_axis(df_f, "US_CPI", "CN_CPI", TEXT[lang]["chart_infl_comp"])
+        if st.button(TEXT[lang]["btn_cpi_comp"]):
+            if df_f.empty:
+                st.info(TEXT[lang]["stats_unavail"])
+            elif not api_key:
+                st.info(TEXT[lang]["ai_need_key"])
+            else:
+                c = df_f["US_CPI"].corr(df_f["CN_CPI"]) if "US_CPI" in df_f.columns and "CN_CPI" in df_f.columns else None
+                if lang == "zh":
+                    prompt = f"分析美国和中国的 CPI 走势。相关系数为 {c if c is not None else 'N/A'}。这说明了什么？"
+                else:
+                    prompt = f"Analyze US and CN CPI trends. Correlation is {c if c is not None else 'N/A'}. What does it imply?"
+                resp = run_gemini(prompt, df_f, api_key, lang)
+                with st.expander("AI"):
+                    st.write(resp)
+                if "ai_history" not in st.session_state:
+                    st.session_state["ai_history"] = []
+                ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                summ = resp.strip()
+                if len(summ) > 160:
+                    summ = summ[:160] + "..."
+                entry = {"time": ts, "question": "CPI Comparison", "summary": summ, "detail": resp}
+                st.session_state["ai_history"].append(entry)
+                st.session_state["ai_history"] = st.session_state["ai_history"][-7:]
+                save_path = os.path.join("output", "eda", "ai_history.json")
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                with open(save_path, "w", encoding="utf-8") as f:
+                    import json as _json
+                    _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
         st.subheader(TEXT[lang]["fx_gold"])
         market_choice = st.radio(TEXT[lang]["market_switch"], ["SP500_Close", "CN_Stock_Price"], horizontal=True, format_func=lambda x: KPI_LABELS[lang].get(x, x))
         render_dual_axis(df_f, "USD_CNY_Rate", "Gold_Price", TEXT[lang]["chart_fx_gold"])
+        if st.button(TEXT[lang]["btn_gold_trend"]):
+            s = df_f["Gold_Price"].dropna()
+            if s.empty:
+                st.info(TEXT[lang]["stats_unavail"])
+            elif not api_key:
+                st.info(TEXT[lang]["ai_need_key"])
+            else:
+                desc = s.describe().to_string()
+                head = df_f[["Gold_Price"]].head().to_string()
+                if lang == "zh":
+                    prompt = f"你是一个金融分析师。基于以下统计与数据摘要，分析黄金价格在所选时间范围内的趋势与波动性。\n\n统计:\n{desc}\n\n数据摘要:\n{head}"
+                else:
+                    prompt = f"You are a financial analyst. Analyze gold price trend and volatility based on stats and snippet.\n\nStats:\n{desc}\n\nSnippet:\n{head}"
+                resp = run_gemini(prompt, df_f, api_key, lang)
+                with st.expander("AI"):
+                    st.write(resp)
+                if "ai_history" not in st.session_state:
+                    st.session_state["ai_history"] = []
+                ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                summ = resp.strip()
+                if len(summ) > 160:
+                    summ = summ[:160] + "..."
+                entry = {"time": ts, "question": "Gold Trend", "summary": summ, "detail": resp}
+                st.session_state["ai_history"].append(entry)
+                st.session_state["ai_history"] = st.session_state["ai_history"][-7:]
+                save_path = os.path.join("output", "eda", "ai_history.json")
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                with open(save_path, "w", encoding="utf-8") as f:
+                    import json as _json
+                    _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
         render_dual_axis(df_f, "USD_CNY_Rate", market_choice, TEXT[lang]["chart_fx_market"])
         st.subheader(TEXT[lang]["m2_trend"])
         render_line(df_f, "CN_M2", TEXT[lang]["chart_m2"])
         st.subheader(TEXT[lang]["corr_heat"])
         render_heatmap(corr_df if corr_df is not None else pd.DataFrame(), TEXT[lang]["corr_heat"], TEXT[lang]["corr_unavail"])
+        if st.button(TEXT[lang]["btn_corr_matrix"]):
+            cols = ["USD_CNY_Rate","US_Interest_Rate","CN_LPR","US_CPI","CN_CPI","Gold_Price","SP500_Close","CN_M2","CN_Stock_Price","Interest_Spread"]
+            use = [c for c in cols if c in df_f.columns]
+            if not use:
+                st.info(TEXT[lang]["corr_unavail"])
+            elif not api_key:
+                st.info(TEXT[lang]["ai_need_key"])
+            else:
+                js = df_f[use].corr().to_json()
+                if lang == "zh":
+                    prompt = f"这是相关性矩阵(JSON): {js}。请找出与 USD/CNY_Rate 相关性最强(正或负)的三个变量，并解释含义。"
+                else:
+                    prompt = f"This is the correlation matrix (JSON): {js}. Find the top 3 variables most correlated (pos/neg) with USD_CNY_Rate and explain."
+                resp = run_gemini(prompt, df_f, api_key, lang)
+                with st.expander("AI"):
+                    st.write(resp)
+                if "ai_history" not in st.session_state:
+                    st.session_state["ai_history"] = []
+                ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                summ = resp.strip()
+                if len(summ) > 160:
+                    summ = summ[:160] + "..."
+                entry = {"time": ts, "question": "Correlation Matrix", "summary": summ, "detail": resp}
+                st.session_state["ai_history"].append(entry)
+                st.session_state["ai_history"] = st.session_state["ai_history"][-7:]
+                save_path = os.path.join("output", "eda", "ai_history.json")
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                with open(save_path, "w", encoding="utf-8") as f:
+                    import json as _json
+                    _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
         st.subheader(TEXT[lang]["summary_stats"]) 
         stats_df = compute_summary_stats(df_f, selected_stats_cols)
         render_summary_stats(stats_df, TEXT[lang]["stats_unavail"]) 
         st.subheader(TEXT[lang]["spread_fx"])
         render_scatter(df_f, "Interest_Spread", "USD_CNY_Rate", TEXT[lang]["chart_spread_fx"])
+        if st.button(TEXT[lang]["btn_spread_fx"]):
+            if df_f.empty:
+                st.info(TEXT[lang]["stats_unavail"])
+            elif not api_key:
+                st.info(TEXT[lang]["ai_need_key"])
+            else:
+                c = df_f["Interest_Spread"].corr(df_f["USD_CNY_Rate"]) if "Interest_Spread" in df_f.columns and "USD_CNY_Rate" in df_f.columns else None
+                if lang == "zh":
+                    prompt = f"你是一个外汇策略师。美中利差与 USD/CNY 汇率的相关系数为 {c if c is not None else 'N/A'}。请定量分析利差是否是汇率的强驱动因素？该相关性方向与经济含义是什么？"
+                else:
+                    prompt = f"You are an FX strategist. Correlation between spread and USD/CNY is {c if c is not None else 'N/A'}. Assess strength as driver, sign, and economic meaning."
+                resp = run_gemini(prompt, df_f, api_key, lang)
+                with st.expander("AI"):
+                    st.write(resp)
+                if "ai_history" not in st.session_state:
+                    st.session_state["ai_history"] = []
+                ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                summ = resp.strip()
+                if len(summ) > 160:
+                    summ = summ[:160] + "..."
+                entry = {"time": ts, "question": "Spread vs FX", "summary": summ, "detail": resp}
+                st.session_state["ai_history"].append(entry)
+                st.session_state["ai_history"] = st.session_state["ai_history"][-7:]
+                save_path = os.path.join("output", "eda", "ai_history.json")
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                with open(save_path, "w", encoding="utf-8") as f:
+                    import json as _json
+                    _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
         st.subheader(TEXT[lang]["fx_hist"])
         render_hist(df_f, "USD_CNY_Rate", TEXT[lang]["chart_fx_hist"])
+        if st.button(TEXT[lang]["btn_fx_hist"]):
+            s = df_f["USD_CNY_Rate"].dropna()
+            if s.empty:
+                st.info(TEXT[lang]["stats_unavail"])
+            elif not api_key:
+                st.info(TEXT[lang]["ai_need_key"])
+            else:
+                skew = s.skew()
+                kurt = s.kurt()
+                if lang == "zh":
+                    prompt = f"分析 USD/CNY 汇率的统计分布。其偏度为 {skew:.4f}，峰度为 {kurt:.4f}。解释该分布的偏态与峰度以及对外汇风险的含义。"
+                else:
+                    prompt = f"Analyze USD/CNY distribution. Skewness {skew:.4f}, kurtosis {kurt:.4f}. Explain skew/peakedness and FX risk implications."
+                resp = run_gemini(prompt, df_f, api_key, lang)
+                with st.expander("AI"):
+                    st.write(resp)
+                if "ai_history" not in st.session_state:
+                    st.session_state["ai_history"] = []
+                ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                summ = resp.strip()
+                if len(summ) > 160:
+                    summ = summ[:160] + "..."
+                entry = {"time": ts, "question": "FX Histogram", "summary": summ, "detail": resp}
+                st.session_state["ai_history"].append(entry)
+                st.session_state["ai_history"] = st.session_state["ai_history"][-7:]
+                save_path = os.path.join("output", "eda", "ai_history.json")
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                with open(save_path, "w", encoding="utf-8") as f:
+                    import json as _json
+                    _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
     if "ai_query" not in st.session_state:
         st.session_state["ai_query"] = ""
     if "ai_history" not in st.session_state:
