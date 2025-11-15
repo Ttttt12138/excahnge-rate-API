@@ -137,7 +137,58 @@ def _ai_cache_save():
 def _ai_cache_key(chart_id: str, lang: str) -> str:
     return f"{chart_id}:{lang}"
 
-def _ai_cache_show(chart_id: str, start_date: dt.date, end_date: dt.date, params: dict, TEXT: dict):
+def _reanalyze(chart_id: str, lang: str, df_f: pd.DataFrame, api_key: str, TEXT: dict, start_date: dt.date, end_date: dt.date):
+    if not api_key:
+        st.info(TEXT[lang]["ai_need_key"])
+        return
+    if df_f is None or df_f.empty:
+        st.info(TEXT[lang]["stats_unavail"]) 
+        return
+    if chart_id == "fx_trend":
+        s = df_f["USD_CNY_Rate"].dropna()
+        desc = s.describe().to_string()
+        head = df_f[["USD_CNY_Rate"]].head().to_string()
+        prompt = (f"你是一个金融分析师。基于以下统计数据与数据摘要，分析 USD/CNY 汇率在所选时间范围内的趋势、波动性和关键转折点。\n\n统计:\n{desc}\n\n数据摘要:\n{head}" if lang == "zh" else f"You are a financial analyst. Analyze USD/CNY trend, volatility and turning points based on stats and snippet.\n\nStats:\n{desc}\n\nSnippet:\n{head}")
+    elif chart_id == "rate_comp":
+        c = df_f["US_Interest_Rate"].corr(df_f["CN_LPR"]) if "US_Interest_Rate" in df_f.columns and "CN_LPR" in df_f.columns else None
+        sp = None
+        if "US_Interest_Rate" in df_f.columns and "CN_LPR" in df_f.columns and not df_f[["US_Interest_Rate","CN_LPR"]].dropna().empty:
+            sp = (df_f["US_Interest_Rate"].iloc[-1] - df_f["CN_LPR"].iloc[-1]) * 100
+        prompt = (f"你是一个经济学家。美中利率的相关系数为 {c if c is not None else 'N/A'}，最新利差为 {sp if sp is not None else 'N/A'} 基点。请分析两国利率在所选时间内的走势是趋同还是分化，并解释这种相关性。" if lang == "zh" else f"You are an economist. US vs CN rates correlation is {c if c is not None else 'N/A'}, latest spread {sp if sp is not None else 'N/A'} bps. Analyze convergence/divergence and explain correlation.")
+    elif chart_id == "cpi_comp":
+        c = df_f["US_CPI"].corr(df_f["CN_CPI"]) if "US_CPI" in df_f.columns and "CN_CPI" in df_f.columns else None
+        prompt = (f"分析美国和中国的 CPI 走势。相关系数为 {c if c is not None else 'N/A'}。这说明了什么？" if lang == "zh" else f"Analyze US and CN CPI trends. Correlation is {c if c is not None else 'N/A'}. What does it imply?")
+    elif chart_id == "gold_trend":
+        s = df_f["Gold_Price"].dropna()
+        desc = s.describe().to_string()
+        head = df_f[["Gold_Price"]].head().to_string()
+        prompt = (f"你是一个金融分析师。基于以下统计与数据摘要，分析黄金价格在所选时间范围内的趋势与波动性。\n\n统计:\n{desc}\n\n数据摘要:\n{head}" if lang == "zh" else f"You are a financial analyst. Analyze gold price trend and volatility based on stats and snippet.\n\nStats:\n{desc}\n\nSnippet:\n{head}")
+    elif chart_id == "corr_matrix":
+        cols = ["USD_CNY_Rate","US_Interest_Rate","CN_LPR","US_CPI","CN_CPI","Gold_Price","SP500_Close","CN_M2","CN_Stock_Price","Interest_Spread"]
+        use = [c for c in cols if c in df_f.columns]
+        js = df_f[use].corr().to_json()
+        prompt = (f"这是相关性矩阵(JSON): {js}。请找出与 USD/CNY_Rate 相关性最强(正或负)的三个变量，并解释含义。" if lang == "zh" else f"This is the correlation matrix (JSON): {js}. Find the top 3 variables most correlated (pos/neg) with USD_CNY_Rate and explain.")
+    elif chart_id == "spread_fx":
+        c = df_f["Interest_Spread"].corr(df_f["USD_CNY_Rate"]) if "Interest_Spread" in df_f.columns and "USD_CNY_Rate" in df_f.columns else None
+        prompt = (f"你是一个外汇策略师。美中利差与 USD/CNY 汇率的相关系数为 {c if c is not None else 'N/A'}。请定量分析利差是否是汇率的强驱动因素？该相关性方向与经济含义是什么？" if lang == "zh" else f"You are an FX strategist. Correlation between spread and USD/CNY is {c if c is not None else 'N/A'}. Assess strength as driver, sign, and economic meaning.")
+    elif chart_id == "fx_hist":
+        s = df_f["USD_CNY_Rate"].dropna()
+        skew = s.skew(); kurt = s.kurt()
+        prompt = (f"分析 USD/CNY 汇率的统计分布。其偏度为 {skew:.4f}，峰度为 {kurt:.4f}。解释该分布的偏态与峰度以及对外汇风险的含义。" if lang == "zh" else f"Analyze USD/CNY distribution. Skewness {skew:.4f}, kurtosis {kurt:.4f}. Explain skew/peakedness and FX risk implications.")
+    else:
+        return
+    resp = run_gemini(prompt, df_f, api_key, lang)
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    summ = resp.strip(); summ = summ if len(summ) <= 160 else summ[:160] + "..."
+    cache = _ai_cache_load()
+    key = _ai_cache_key(chart_id, lang)
+    fpv = _fp(chart_id, lang, start_date, end_date, {})
+    cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
+    _ai_cache_save()
+    with st.expander(("AI · 中文" if lang=="zh" else "AI · English") + f" | {TEXT[lang]['ai_based_on_range']}: " + _range_str(start_date, end_date)):
+        st.write(resp)
+
+def _ai_cache_show(chart_id: str, start_date: dt.date, end_date: dt.date, params: dict, TEXT: dict, df_f: pd.DataFrame, api_key: str):
     cache = _ai_cache_load()
     rng = _range_str(start_date, end_date)
     for lg in ["zh", "en"]:
@@ -146,12 +197,19 @@ def _ai_cache_show(chart_id: str, start_date: dt.date, end_date: dt.date, params
         if not entry:
             continue
         fp_new = _fp(chart_id, lg, start_date, end_date, params)
-        if entry.get("fingerprint") != fp_new:
-            cache.pop(k, None)
-            continue
+        is_match = entry.get("fingerprint") == fp_new
         ttl = "AI · 中文" if lg == "zh" else "AI · English"
-        with st.expander(f"{ttl} | {TEXT[lg].get('ai_based_on_range','Based on range')}: {rng}"):
+        title = f"{ttl} | {TEXT[lg].get('ai_based_on_range','Based on range')}: {rng}"
+        if not is_match:
+            title = f"⚠️ {TEXT[lg].get('ai_outdated','Outdated')} | {title}"
+        with st.expander(title):
             st.write(entry.get("detail", ""))
+            if not is_match:
+                c1, c2 = st.columns([1,1])
+                if c1.button(TEXT[lg].get('ai_reanalyze','Reanalyze'), key=f"rean_{chart_id}_{lg}"):
+                    _reanalyze(chart_id, lg, df_f, api_key, TEXT, start_date, end_date)
+                if c2.button(TEXT[lg].get('ai_clear_this','Clear this analysis'), key=f"clr_{chart_id}_{lg}"):
+                    cache.pop(k, None); _ai_cache_save(); st.rerun()
 
 @st.cache_data(show_spinner=False)
 def compute_summary_stats(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
@@ -277,6 +335,9 @@ def main():
             "ai_need_key": "未检测到 Key，请在侧边栏输入或设置 .env/Secrets",
             "ai_cached": "已缓存（与当前筛选一致）",
             "ai_based_on_range": "基于区间",
+            "ai_outdated": "与当前筛选不一致（过期）",
+            "ai_reanalyze": "重新分析",
+            "ai_clear_this": "清空本分析",
         },
         "en": {
             "title": "💹 USD/CNY Deep Analysis Dashboard",
@@ -324,6 +385,9 @@ def main():
             "ai_need_key": "API Key missing. Enter in sidebar or set .env/Secrets",
             "ai_cached": "Cached (matches current filter)",
             "ai_based_on_range": "Based on range",
+            "ai_outdated": "Outdated (mismatch with current filter)",
+            "ai_reanalyze": "Reanalyze",
+            "ai_clear_this": "Clear this analysis",
         },
     }
     KPI_LABELS = {
@@ -438,7 +502,7 @@ def main():
         render_kpis({"items": items})
         st.subheader(TEXT[lang]["core_trends"])
         render_line(df_f, "USD_CNY_Rate", TEXT[lang]["chart_fx_trend"])
-        _ai_cache_show("fx_trend", start_date, end_date, {}, TEXT)
+        _ai_cache_show("fx_trend", start_date, end_date, {}, TEXT, df_f, api_key)
         if st.button(TEXT[lang]["btn_fx_trend"]):
             s = df_f["USD_CNY_Rate"].dropna()
             if s.empty:
@@ -481,7 +545,7 @@ def main():
                 _ai_cache_save()
         st.subheader(TEXT[lang]["macro_contrast"])
         render_dual_axis(df_f, "US_Interest_Rate", "CN_LPR", TEXT[lang]["chart_rate_comp"])
-        _ai_cache_show("rate_comp", start_date, end_date, {}, TEXT)
+        _ai_cache_show("rate_comp", start_date, end_date, {}, TEXT, df_f, api_key)
         if st.button(TEXT[lang]["btn_rate_comp"]):
             if df_f.empty:
                 st.info(TEXT[lang]["stats_unavail"])
@@ -524,7 +588,7 @@ def main():
                 cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
                 _ai_cache_save()
         render_dual_axis(df_f, "US_CPI", "CN_CPI", TEXT[lang]["chart_infl_comp"])
-        _ai_cache_show("cpi_comp", start_date, end_date, {}, TEXT)
+        _ai_cache_show("cpi_comp", start_date, end_date, {}, TEXT, df_f, api_key)
         if st.button(TEXT[lang]["btn_cpi_comp"]):
             if df_f.empty:
                 st.info(TEXT[lang]["stats_unavail"])
@@ -561,7 +625,7 @@ def main():
         st.subheader(TEXT[lang]["fx_gold"])
         market_choice = st.radio(TEXT[lang]["market_switch"], ["SP500_Close", "CN_Stock_Price"], horizontal=True, format_func=lambda x: KPI_LABELS[lang].get(x, x))
         render_dual_axis(df_f, "USD_CNY_Rate", "Gold_Price", TEXT[lang]["chart_fx_gold"])
-        _ai_cache_show("gold_trend", start_date, end_date, {}, TEXT)
+        _ai_cache_show("gold_trend", start_date, end_date, {}, TEXT, df_f, api_key)
         if st.button(TEXT[lang]["btn_gold_trend"]):
             s = df_f["Gold_Price"].dropna()
             if s.empty:
@@ -602,7 +666,7 @@ def main():
         render_line(df_f, "CN_M2", TEXT[lang]["chart_m2"])
         st.subheader(TEXT[lang]["corr_heat"])
         render_heatmap(corr_df if corr_df is not None else pd.DataFrame(), TEXT[lang]["corr_heat"], TEXT[lang]["corr_unavail"])
-        _ai_cache_show("corr_matrix", start_date, end_date, {}, TEXT)
+        _ai_cache_show("corr_matrix", start_date, end_date, {}, TEXT, df_f, api_key)
         if st.button(TEXT[lang]["btn_corr_matrix"]):
             cols = ["USD_CNY_Rate","US_Interest_Rate","CN_LPR","US_CPI","CN_CPI","Gold_Price","SP500_Close","CN_M2","CN_Stock_Price","Interest_Spread"]
             use = [c for c in cols if c in df_f.columns]
@@ -643,7 +707,7 @@ def main():
         render_summary_stats(stats_df, TEXT[lang]["stats_unavail"]) 
         st.subheader(TEXT[lang]["spread_fx"])
         render_scatter(df_f, "Interest_Spread", "USD_CNY_Rate", TEXT[lang]["chart_spread_fx"])
-        _ai_cache_show("spread_fx", start_date, end_date, {}, TEXT)
+        _ai_cache_show("spread_fx", start_date, end_date, {}, TEXT, df_f, api_key)
         if st.button(TEXT[lang]["btn_spread_fx"]):
             if df_f.empty:
                 st.info(TEXT[lang]["stats_unavail"])
@@ -674,7 +738,7 @@ def main():
                     _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
         st.subheader(TEXT[lang]["fx_hist"])
         render_hist(df_f, "USD_CNY_Rate", TEXT[lang]["chart_fx_hist"])
-        _ai_cache_show("fx_hist", start_date, end_date, {}, TEXT)
+        _ai_cache_show("fx_hist", start_date, end_date, {}, TEXT, df_f, api_key)
         if st.button(TEXT[lang]["btn_fx_hist"]):
             s = df_f["USD_CNY_Rate"].dropna()
             if s.empty:
