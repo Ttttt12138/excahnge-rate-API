@@ -470,6 +470,11 @@ def main():
                     import json as _json
                     _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
                 cache = _ai_cache_load()
+                key = _ai_cache_key("cpi_comp", lang)
+                fpv = _fp("cpi_comp", lang, start_date, end_date, {})
+                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
+                _ai_cache_save()
+                cache = _ai_cache_load()
                 key = _ai_cache_key("fx_trend", lang)
                 fpv = _fp("fx_trend", lang, start_date, end_date, {})
                 cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
@@ -509,6 +514,11 @@ def main():
                     import json as _json
                     _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
                 cache = _ai_cache_load()
+                key = _ai_cache_key("gold_trend", lang)
+                fpv = _fp("gold_trend", lang, start_date, end_date, {})
+                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
+                _ai_cache_save()
+                cache = _ai_cache_load()
                 key = _ai_cache_key("rate_comp", lang)
                 fpv = _fp("rate_comp", lang, start_date, end_date, {})
                 cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
@@ -543,6 +553,11 @@ def main():
                 with open(save_path, "w", encoding="utf-8") as f:
                     import json as _json
                     _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
+                cache = _ai_cache_load()
+                key = _ai_cache_key("corr_matrix", lang)
+                fpv = _fp("corr_matrix", lang, start_date, end_date, {})
+                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
+                _ai_cache_save()
         st.subheader(TEXT[lang]["fx_gold"])
         market_choice = st.radio(TEXT[lang]["market_switch"], ["SP500_Close", "CN_Stock_Price"], horizontal=True, format_func=lambda x: KPI_LABELS[lang].get(x, x))
         render_dual_axis(df_f, "USD_CNY_Rate", "Gold_Price", TEXT[lang]["chart_fx_gold"])
@@ -577,6 +592,11 @@ def main():
                 with open(save_path, "w", encoding="utf-8") as f:
                     import json as _json
                     _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
+                cache = _ai_cache_load()
+                key = _ai_cache_key("spread_fx", lang)
+                fpv = _fp("spread_fx", lang, start_date, end_date, {})
+                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
+                _ai_cache_save()
         render_dual_axis(df_f, "USD_CNY_Rate", market_choice, TEXT[lang]["chart_fx_market"])
         st.subheader(TEXT[lang]["m2_trend"])
         render_line(df_f, "CN_M2", TEXT[lang]["chart_m2"])
@@ -613,6 +633,11 @@ def main():
                 with open(save_path, "w", encoding="utf-8") as f:
                     import json as _json
                     _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
+                cache = _ai_cache_load()
+                key = _ai_cache_key("fx_hist", lang)
+                fpv = _fp("fx_hist", lang, start_date, end_date, {})
+                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
+                _ai_cache_save()
         st.subheader(TEXT[lang]["summary_stats"]) 
         stats_df = compute_summary_stats(df_f, selected_stats_cols)
         render_summary_stats(stats_df, TEXT[lang]["stats_unavail"]) 
@@ -755,28 +780,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-                cache = _ai_cache_load()
-                key = _ai_cache_key("cpi_comp", lang)
-                fpv = _fp("cpi_comp", lang, start_date, end_date, {})
-                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
-                _ai_cache_save()
-                cache = _ai_cache_load()
-                key = _ai_cache_key("gold_trend", lang)
-                fpv = _fp("gold_trend", lang, start_date, end_date, {})
-                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
-                _ai_cache_save()
-                cache = _ai_cache_load()
-                key = _ai_cache_key("corr_matrix", lang)
-                fpv = _fp("corr_matrix", lang, start_date, end_date, {})
-                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
-                _ai_cache_save()
-                cache = _ai_cache_load()
-                key = _ai_cache_key("spread_fx", lang)
-                fpv = _fp("spread_fx", lang, start_date, end_date, {})
-                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
-                _ai_cache_save()
-                cache = _ai_cache_load()
-                key = _ai_cache_key("fx_hist", lang)
-                fpv = _fp("fx_hist", lang, start_date, end_date, {})
-                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
-                _ai_cache_save()
