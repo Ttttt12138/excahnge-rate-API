@@ -1,0 +1,10 @@
+{
+  "volatility_usd_cny": 0.3011565842930973,
+  "interest_spread_mean": -0.24611570247933887,
+  "inflation_spread_mean": 164.19589999999997,
+  "corr_usd_cny_gold": -0.5038777189797901,
+  "corr_usd_cny_interest_spread": -0.055126716278263536,
+  "corr_usd_cny_sp500": 0.48192551008177187,
+  "corr_usd_cny_cn_stock": -0.25139045336681415,
+  "skew_usd_cny": -0.1512473468731603
+}
