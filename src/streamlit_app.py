@@ -288,7 +288,11 @@ def main():
     st.session_state["lang"] = lang_choice
     lang = "zh" if lang_choice == "中文" else "en"
     st.title(TEXT[lang]["title"])
-    default_url = st.secrets.get("DATA_URL", os.environ.get("DATA_URL", ""))
+    default_url = os.environ.get("DATA_URL", "")
+    try:
+        default_url = st.secrets.get("DATA_URL", default_url)
+    except Exception:
+        pass
     data_url = st.sidebar.text_input("数据源 URL (Gist Raw)", value=default_url)
     src_path = data_url if data_url else os.path.join("output", "master_data.csv")
     if not (data_url.startswith("http://") or data_url.startswith("https://")) and not os.path.exists(src_path):
@@ -307,7 +311,13 @@ def main():
     date_min = df.index.min().date() if not df.empty else dt.date(2000, 1, 1)
     date_max = df.index.max().date() if not df.empty else dt.date.today()
     date_range = st.sidebar.date_input(TEXT[lang]["date_range"], (date_min, date_max))
-    api_key_default = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", os.environ.get("Gemini_API_KEY", "")))
+    api_key_default = os.environ.get("GEMINI_API_KEY", os.environ.get("Gemini_API_KEY", ""))
+    try:
+        v = st.secrets.get("GEMINI_API_KEY", None)
+        if v:
+            api_key_default = v
+    except Exception:
+        pass
     api_key = api_key_default
     st.sidebar.caption("✅ 已检测到 API Key" if api_key else "⚠️ 未检测到 API Key")
     selectable_cols = [
