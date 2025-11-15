@@ -318,8 +318,12 @@ def main():
             api_key_default = v
     except Exception:
         pass
-    api_key = api_key_default
-    st.sidebar.caption("✅ 已检测到 API Key" if api_key else "⚠️ 未检测到 API Key")
+    if api_key_default:
+        api_key = api_key_default
+        st.sidebar.caption("✅ 已检测到 API Key")
+    else:
+        st.sidebar.caption("⚠️ 未检测到 API Key")
+        api_key = st.sidebar.text_input(TEXT[lang]["api_key"], type="password")
     selectable_cols = [
         "USD_CNY_Rate",
         "US_Interest_Rate",
