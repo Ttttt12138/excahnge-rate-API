@@ -100,6 +100,42 @@ def compute_corr(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     df_num = df[use_cols].apply(pd.to_numeric, errors="coerce")
     return df_num.corr()
 
+@st.cache_data(show_spinner=False)
+def compute_summary_stats(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    use_cols = [c for c in cols if c in df.columns]
+    if not use_cols:
+        return pd.DataFrame()
+    df_num = df[use_cols].apply(pd.to_numeric, errors="coerce")
+    res = {}
+    for c in use_cols:
+        s = df_num[c].dropna()
+        if s.empty:
+            continue
+        res[c] = {
+            "count": float(s.count()),
+            "mean": float(s.mean()),
+            "median": float(s.median()),
+            "std": float(s.std()),
+            "min": float(s.min()),
+            "max": float(s.max()),
+            "q25": float(s.quantile(0.25)),
+            "q75": float(s.quantile(0.75)),
+            "skew": float(s.skew()),
+            "kurt": float(s.kurt()),
+        }
+    if not res:
+        return pd.DataFrame()
+    out = pd.DataFrame(res)
+    return out.round(4)
+
+def render_summary_stats(stats_df: pd.DataFrame, info_text: str):
+    if stats_df is None or stats_df.empty:
+        st.info(info_text)
+        return
+    st.dataframe(stats_df, use_container_width=True)
+
 def compute_kpis(df: pd.DataFrame, keys: list[str]) -> dict:
     items: dict[str, dict] = {}
     if df is None or df.empty:
@@ -152,6 +188,9 @@ def main():
             "m2_trend": "中国 M2 趋势",
             "corr_heat": "相关性热图",
             "corr_unavail": "相关性数据不可用",
+            "summary_stats": "总结统计",
+            "stats_unavail": "统计数据不可用",
+            "stats_select_cols": "选择统计字段",
             "spread_fx": "利差与汇率关系",
             "fx_hist": "汇率分布直方图",
             "ai_title": "AI 智能分析",
@@ -186,6 +225,9 @@ def main():
             "m2_trend": "China M2 Trend",
             "corr_heat": "Correlation Heatmap",
             "corr_unavail": "Correlation data unavailable",
+            "summary_stats": "Summary Stats",
+            "stats_unavail": "Summary data unavailable",
+            "stats_select_cols": "Select fields",
             "spread_fx": "Spread vs FX",
             "fx_hist": "FX Histogram",
             "ai_title": "AI Analysis",
@@ -258,6 +300,20 @@ def main():
     date_range = st.sidebar.date_input(TEXT[lang]["date_range"], (date_min, date_max))
     api_key_default = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
     api_key = st.sidebar.text_input(TEXT[lang]["api_key"], type="password", value=api_key_default)
+    selectable_cols = [
+        "USD_CNY_Rate",
+        "US_Interest_Rate",
+        "CN_LPR",
+        "US_CPI",
+        "CN_CPI",
+        "Gold_Price",
+        "SP500_Close",
+        "CN_M2",
+        "CN_Stock_Price",
+        "Interest_Spread",
+    ]
+    available_cols = [c for c in selectable_cols if c in df.columns]
+    selected_stats_cols = st.sidebar.multiselect(TEXT[lang]["stats_select_cols"], options=available_cols, default=available_cols[:4])
     start_date, end_date = date_range if isinstance(date_range, tuple) else (date_min, date_max)
     df_f = filter_by_date(df, start_date, end_date)
     if corr_df is None or corr_df.empty:
@@ -301,6 +357,9 @@ def main():
         render_line(df_f, "CN_M2", TEXT[lang]["chart_m2"])
         st.subheader(TEXT[lang]["corr_heat"])
         render_heatmap(corr_df if corr_df is not None else pd.DataFrame(), TEXT[lang]["corr_heat"], TEXT[lang]["corr_unavail"])
+        st.subheader(TEXT[lang]["summary_stats"]) 
+        stats_df = compute_summary_stats(df_f, selected_stats_cols)
+        render_summary_stats(stats_df, TEXT[lang]["stats_unavail"]) 
         st.subheader(TEXT[lang]["spread_fx"])
         render_scatter(df_f, "Interest_Spread", "USD_CNY_Rate", TEXT[lang]["chart_spread_fx"])
         st.subheader(TEXT[lang]["fx_hist"])
