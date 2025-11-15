@@ -5,6 +5,7 @@ try:
 except ModuleNotFoundError:
     pass
 import json
+import hashlib
 import datetime as dt
 import pandas as pd
 import streamlit as st
@@ -104,6 +105,53 @@ def compute_corr(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
         return pd.DataFrame()
     df_num = df[use_cols].apply(pd.to_numeric, errors="coerce")
     return df_num.corr()
+
+def _range_str(s: dt.date, e: dt.date) -> str:
+    return f"{s} ~ {e}"
+
+def _fp(chart_id: str, lang: str, s: dt.date, e: dt.date, params: dict) -> str:
+    payload = {"chart_id": chart_id, "lang": lang, "start": str(s), "end": str(e), "params": params or {}}
+    raw = json.dumps(payload, sort_keys=True)
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+def _ai_cache_load() -> dict:
+    if "ai_chart_cache" in st.session_state:
+        return st.session_state["ai_chart_cache"]
+    p = os.path.join("output", "eda", "ai_chart_cache.json")
+    if os.path.exists(p):
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                st.session_state["ai_chart_cache"] = json.load(f)
+        except Exception:
+            st.session_state["ai_chart_cache"] = {}
+    else:
+        st.session_state["ai_chart_cache"] = {}
+    return st.session_state["ai_chart_cache"]
+
+def _ai_cache_save():
+    p = os.path.join("output", "eda", "ai_chart_cache.json")
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(st.session_state.get("ai_chart_cache", {}), f, ensure_ascii=False, indent=2)
+
+def _ai_cache_key(chart_id: str, lang: str) -> str:
+    return f"{chart_id}:{lang}"
+
+def _ai_cache_show(chart_id: str, start_date: dt.date, end_date: dt.date, params: dict, TEXT: dict):
+    cache = _ai_cache_load()
+    rng = _range_str(start_date, end_date)
+    for lg in ["zh", "en"]:
+        k = _ai_cache_key(chart_id, lg)
+        entry = cache.get(k)
+        if not entry:
+            continue
+        fp_new = _fp(chart_id, lg, start_date, end_date, params)
+        if entry.get("fingerprint") != fp_new:
+            cache.pop(k, None)
+            continue
+        ttl = "AI · 中文" if lg == "zh" else "AI · English"
+        with st.expander(f"{ttl} | {TEXT[lg].get('ai_based_on_range','Based on range')}: {rng}"):
+            st.write(entry.get("detail", ""))
 
 @st.cache_data(show_spinner=False)
 def compute_summary_stats(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
@@ -227,6 +275,8 @@ def main():
             "btn_corr_matrix": "🤖 分析 [相关性矩阵]",
             "btn_fx_hist": "🤖 分析 [汇率分布]",
             "ai_need_key": "未检测到 Key，请在侧边栏输入或设置 .env/Secrets",
+            "ai_cached": "已缓存（与当前筛选一致）",
+            "ai_based_on_range": "基于区间",
         },
         "en": {
             "title": "💹 USD/CNY Deep Analysis Dashboard",
@@ -272,6 +322,8 @@ def main():
             "btn_corr_matrix": "🤖 Analyze [Correlation Matrix]",
             "btn_fx_hist": "🤖 Analyze [FX Distribution]",
             "ai_need_key": "API Key missing. Enter in sidebar or set .env/Secrets",
+            "ai_cached": "Cached (matches current filter)",
+            "ai_based_on_range": "Based on range",
         },
     }
     KPI_LABELS = {
@@ -386,6 +438,7 @@ def main():
         render_kpis({"items": items})
         st.subheader(TEXT[lang]["core_trends"])
         render_line(df_f, "USD_CNY_Rate", TEXT[lang]["chart_fx_trend"])
+        _ai_cache_show("fx_trend", start_date, end_date, {}, TEXT)
         if st.button(TEXT[lang]["btn_fx_trend"]):
             s = df_f["USD_CNY_Rate"].dropna()
             if s.empty:
@@ -400,7 +453,7 @@ def main():
                 else:
                     prompt = f"You are a financial analyst. Analyze USD/CNY trend, volatility and turning points based on stats and snippet.\n\nStats:\n{desc}\n\nSnippet:\n{head}"
                 resp = run_gemini(prompt, df_f, api_key, lang)
-                with st.expander("AI"):
+                with st.expander(TEXT[lang]["ai_cached"] + f" | {TEXT[lang]['ai_based_on_range']}: " + _range_str(start_date, end_date)):
                     st.write(resp)
                 if "ai_history" not in st.session_state:
                     st.session_state["ai_history"] = []
@@ -416,8 +469,14 @@ def main():
                 with open(save_path, "w", encoding="utf-8") as f:
                     import json as _json
                     _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
+                cache = _ai_cache_load()
+                key = _ai_cache_key("fx_trend", lang)
+                fpv = _fp("fx_trend", lang, start_date, end_date, {})
+                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
+                _ai_cache_save()
         st.subheader(TEXT[lang]["macro_contrast"])
         render_dual_axis(df_f, "US_Interest_Rate", "CN_LPR", TEXT[lang]["chart_rate_comp"])
+        _ai_cache_show("rate_comp", start_date, end_date, {}, TEXT)
         if st.button(TEXT[lang]["btn_rate_comp"]):
             if df_f.empty:
                 st.info(TEXT[lang]["stats_unavail"])
@@ -433,7 +492,7 @@ def main():
                 else:
                     prompt = f"You are an economist. US vs CN rates correlation is {c if c is not None else 'N/A'}, latest spread {sp if sp is not None else 'N/A'} bps. Analyze convergence/divergence and explain correlation."
                 resp = run_gemini(prompt, df_f, api_key, lang)
-                with st.expander("AI"):
+                with st.expander(TEXT[lang]["ai_cached"] + f" | {TEXT[lang]['ai_based_on_range']}: " + _range_str(start_date, end_date)):
                     st.write(resp)
                 if "ai_history" not in st.session_state:
                     st.session_state["ai_history"] = []
@@ -449,7 +508,13 @@ def main():
                 with open(save_path, "w", encoding="utf-8") as f:
                     import json as _json
                     _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
+                cache = _ai_cache_load()
+                key = _ai_cache_key("rate_comp", lang)
+                fpv = _fp("rate_comp", lang, start_date, end_date, {})
+                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
+                _ai_cache_save()
         render_dual_axis(df_f, "US_CPI", "CN_CPI", TEXT[lang]["chart_infl_comp"])
+        _ai_cache_show("cpi_comp", start_date, end_date, {}, TEXT)
         if st.button(TEXT[lang]["btn_cpi_comp"]):
             if df_f.empty:
                 st.info(TEXT[lang]["stats_unavail"])
@@ -462,7 +527,7 @@ def main():
                 else:
                     prompt = f"Analyze US and CN CPI trends. Correlation is {c if c is not None else 'N/A'}. What does it imply?"
                 resp = run_gemini(prompt, df_f, api_key, lang)
-                with st.expander("AI"):
+                with st.expander(TEXT[lang]["ai_cached"] + f" | {TEXT[lang]['ai_based_on_range']}: " + _range_str(start_date, end_date)):
                     st.write(resp)
                 if "ai_history" not in st.session_state:
                     st.session_state["ai_history"] = []
@@ -481,6 +546,7 @@ def main():
         st.subheader(TEXT[lang]["fx_gold"])
         market_choice = st.radio(TEXT[lang]["market_switch"], ["SP500_Close", "CN_Stock_Price"], horizontal=True, format_func=lambda x: KPI_LABELS[lang].get(x, x))
         render_dual_axis(df_f, "USD_CNY_Rate", "Gold_Price", TEXT[lang]["chart_fx_gold"])
+        _ai_cache_show("gold_trend", start_date, end_date, {}, TEXT)
         if st.button(TEXT[lang]["btn_gold_trend"]):
             s = df_f["Gold_Price"].dropna()
             if s.empty:
@@ -495,7 +561,7 @@ def main():
                 else:
                     prompt = f"You are a financial analyst. Analyze gold price trend and volatility based on stats and snippet.\n\nStats:\n{desc}\n\nSnippet:\n{head}"
                 resp = run_gemini(prompt, df_f, api_key, lang)
-                with st.expander("AI"):
+                with st.expander(TEXT[lang]["ai_cached"] + f" | {TEXT[lang]['ai_based_on_range']}: " + _range_str(start_date, end_date)):
                     st.write(resp)
                 if "ai_history" not in st.session_state:
                     st.session_state["ai_history"] = []
@@ -516,6 +582,7 @@ def main():
         render_line(df_f, "CN_M2", TEXT[lang]["chart_m2"])
         st.subheader(TEXT[lang]["corr_heat"])
         render_heatmap(corr_df if corr_df is not None else pd.DataFrame(), TEXT[lang]["corr_heat"], TEXT[lang]["corr_unavail"])
+        _ai_cache_show("corr_matrix", start_date, end_date, {}, TEXT)
         if st.button(TEXT[lang]["btn_corr_matrix"]):
             cols = ["USD_CNY_Rate","US_Interest_Rate","CN_LPR","US_CPI","CN_CPI","Gold_Price","SP500_Close","CN_M2","CN_Stock_Price","Interest_Spread"]
             use = [c for c in cols if c in df_f.columns]
@@ -530,7 +597,7 @@ def main():
                 else:
                     prompt = f"This is the correlation matrix (JSON): {js}. Find the top 3 variables most correlated (pos/neg) with USD_CNY_Rate and explain."
                 resp = run_gemini(prompt, df_f, api_key, lang)
-                with st.expander("AI"):
+                with st.expander(TEXT[lang]["ai_cached"] + f" | {TEXT[lang]['ai_based_on_range']}: " + _range_str(start_date, end_date)):
                     st.write(resp)
                 if "ai_history" not in st.session_state:
                     st.session_state["ai_history"] = []
@@ -551,6 +618,7 @@ def main():
         render_summary_stats(stats_df, TEXT[lang]["stats_unavail"]) 
         st.subheader(TEXT[lang]["spread_fx"])
         render_scatter(df_f, "Interest_Spread", "USD_CNY_Rate", TEXT[lang]["chart_spread_fx"])
+        _ai_cache_show("spread_fx", start_date, end_date, {}, TEXT)
         if st.button(TEXT[lang]["btn_spread_fx"]):
             if df_f.empty:
                 st.info(TEXT[lang]["stats_unavail"])
@@ -563,7 +631,7 @@ def main():
                 else:
                     prompt = f"You are an FX strategist. Correlation between spread and USD/CNY is {c if c is not None else 'N/A'}. Assess strength as driver, sign, and economic meaning."
                 resp = run_gemini(prompt, df_f, api_key, lang)
-                with st.expander("AI"):
+                with st.expander(TEXT[lang]["ai_cached"] + f" | {TEXT[lang]['ai_based_on_range']}: " + _range_str(start_date, end_date)):
                     st.write(resp)
                 if "ai_history" not in st.session_state:
                     st.session_state["ai_history"] = []
@@ -581,6 +649,7 @@ def main():
                     _json.dump(st.session_state["ai_history"], f, ensure_ascii=False, indent=2)
         st.subheader(TEXT[lang]["fx_hist"])
         render_hist(df_f, "USD_CNY_Rate", TEXT[lang]["chart_fx_hist"])
+        _ai_cache_show("fx_hist", start_date, end_date, {}, TEXT)
         if st.button(TEXT[lang]["btn_fx_hist"]):
             s = df_f["USD_CNY_Rate"].dropna()
             if s.empty:
@@ -595,7 +664,7 @@ def main():
                 else:
                     prompt = f"Analyze USD/CNY distribution. Skewness {skew:.4f}, kurtosis {kurt:.4f}. Explain skew/peakedness and FX risk implications."
                 resp = run_gemini(prompt, df_f, api_key, lang)
-                with st.expander("AI"):
+                with st.expander(TEXT[lang]["ai_cached"] + f" | {TEXT[lang]['ai_based_on_range']}: " + _range_str(start_date, end_date)):
                     st.write(resp)
                 if "ai_history" not in st.session_state:
                     st.session_state["ai_history"] = []
@@ -686,3 +755,28 @@ def main():
 
 if __name__ == "__main__":
     main()
+                cache = _ai_cache_load()
+                key = _ai_cache_key("cpi_comp", lang)
+                fpv = _fp("cpi_comp", lang, start_date, end_date, {})
+                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
+                _ai_cache_save()
+                cache = _ai_cache_load()
+                key = _ai_cache_key("gold_trend", lang)
+                fpv = _fp("gold_trend", lang, start_date, end_date, {})
+                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
+                _ai_cache_save()
+                cache = _ai_cache_load()
+                key = _ai_cache_key("corr_matrix", lang)
+                fpv = _fp("corr_matrix", lang, start_date, end_date, {})
+                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
+                _ai_cache_save()
+                cache = _ai_cache_load()
+                key = _ai_cache_key("spread_fx", lang)
+                fpv = _fp("spread_fx", lang, start_date, end_date, {})
+                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
+                _ai_cache_save()
+                cache = _ai_cache_load()
+                key = _ai_cache_key("fx_hist", lang)
+                fpv = _fp("fx_hist", lang, start_date, end_date, {})
+                cache[key] = {"fingerprint": fpv, "detail": resp, "summary": summ, "time": ts}
+                _ai_cache_save()
