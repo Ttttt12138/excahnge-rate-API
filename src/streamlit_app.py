@@ -1,4 +1,9 @@
 import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ModuleNotFoundError:
+    pass
 import json
 import datetime as dt
 import pandas as pd
@@ -298,7 +303,7 @@ def main():
     date_min = df.index.min().date() if not df.empty else dt.date(2000, 1, 1)
     date_max = df.index.max().date() if not df.empty else dt.date.today()
     date_range = st.sidebar.date_input(TEXT[lang]["date_range"], (date_min, date_max))
-    api_key_default = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+    api_key_default = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", os.environ.get("Gemini_API_KEY", "")))
     api_key = st.sidebar.text_input(TEXT[lang]["api_key"], type="password", value=api_key_default)
     selectable_cols = [
         "USD_CNY_Rate",
