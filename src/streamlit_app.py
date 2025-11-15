@@ -160,7 +160,11 @@ def compute_kpis(df: pd.DataFrame, keys: list[str]) -> dict:
 
 def run_gemini(query: str, df_context: pd.DataFrame, api_key: str, lang: str = "zh") -> str:
     if not api_key:
-        return "请在侧边栏输入 Gemini API Key。" if lang == "zh" else "Please enter Gemini API Key in the sidebar."
+        return (
+            "未检测到 Gemini API Key。请在 .env 或 Secrets 设置 GEMINI_API_KEY 或 Gemini_API_KEY。"
+            if lang == "zh"
+            else "Gemini API Key not found. Please set GEMINI_API_KEY or Gemini_API_KEY in .env or Secrets."
+        )
     try:
         import google.generativeai as genai
         genai.configure(api_key=api_key)
@@ -304,7 +308,8 @@ def main():
     date_max = df.index.max().date() if not df.empty else dt.date.today()
     date_range = st.sidebar.date_input(TEXT[lang]["date_range"], (date_min, date_max))
     api_key_default = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", os.environ.get("Gemini_API_KEY", "")))
-    api_key = st.sidebar.text_input(TEXT[lang]["api_key"], type="password", value=api_key_default)
+    api_key = api_key_default
+    st.sidebar.caption("✅ 已检测到 API Key" if api_key else "⚠️ 未检测到 API Key")
     selectable_cols = [
         "USD_CNY_Rate",
         "US_Interest_Rate",
